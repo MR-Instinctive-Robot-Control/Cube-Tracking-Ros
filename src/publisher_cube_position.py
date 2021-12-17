@@ -113,7 +113,7 @@ class ArUcoDetector:
         return T
 
 
-    def pose_estimation(self, frame, result, matrix_coefficients, distortion_coefficients, size_marker, size_cube, num_cubes, tvec_depth_list, T_R_ROB):
+    def pose_estimation(self, frame, result, matrix_coefficients, distortion_coefficients, size_marker, size_cube, num_cubes, tvec_depth_list, T_R_ROB, C_R_49):
         corners = result[0]
         corners = np.array(corners)
         ids = result[1]
@@ -316,7 +316,17 @@ class ArUcoDetector:
                     id_objects[j] = True
 
                     C_R1, _ = cv2.Rodrigues(rvec)
-                    r = R.from_dcm(C_R1)
+
+                    # Dirty fix
+                    deg = 30
+                    rad = deg * np.pi / 180
+                    C = np.array([[1, 0, 0], [0, np.cos(rad), np.sin(rad)], [0, -np.sin(rad), np.cos(rad)]])
+
+
+
+                    # r = R.from_dcm(np.dot(inv(C_R_49), C_R1)) # Should work but doesn't
+                    r = R.from_dcm(np.dot(C, C_R1)) # Dirty fix
+                    # r = R.from_dcm(C_R1) # Works with offset
 
                     T = self.get_transf_matrix(tvec_sum[j,:], C_R1)
                     T_ROB_R = inv(T_R_ROB)
@@ -366,17 +376,17 @@ class ArUcoDetector:
                 id_marker = int(ids[i][0])
 
                 if ids[i][0] == robot_marker_id and not robot_marker_detected:
-                    robot_marker_detected = True;
+                    robot_marker_detected = True
 
                     C_R_49, _ = cv2.Rodrigues(rvec)   #rotation matrix from 49 to Camera   
                     t_R_49 = np.reshape(tvec, (3,1))
 
                     C_49_ROB = np.array([[-1, 0, 0], [0, 0, -1], [0, 1, 0]])
-                    C_R_ROB = np.dot(C_49_ROB, C_R_49)
+                    C_R_ROB = np.dot(C_R_49, C_49_ROB)
                     T_R_ROB = np.concatenate((C_R_ROB, t_R_49), axis=1)
                     T_R_ROB = np.concatenate((T_R_ROB, np.reshape(np.array([0, 0, 0, 1]), (1,4))), axis=0)
 
-                    return T_R_ROB, robot_marker_detected
+                    return T_R_ROB, robot_marker_detected, C_R_49
 
         T_R_ROB = np.zeros((4,4))
 
@@ -509,7 +519,7 @@ if __name__ == '__main__':
             tvec_depth_robot_id, robot_marker_id = tracker.updateTrajectory_calibration(frame, result, robot_marker_id1, robot_marker_id2)
 
             if tvec_depth_robot_id != 0:
-                T_R_ROB, robot_marker_detected = arucoDetector.environment_calibration(color_image, result, k, d, size_marker, size_cube, robot_marker_detected, robot_marker_id)
+                T_R_ROB, robot_marker_detected, C_R_49 = arucoDetector.environment_calibration(color_image, result, k, d, size_marker, size_cube, robot_marker_detected, robot_marker_id)
                 
                 if robot_marker_detected:
                     T_R_ROB[0, 3] = tvec_depth_robot_id[0]
@@ -563,7 +573,7 @@ if __name__ == '__main__':
 
 
                     if feasible_ids:
-                        pose_image, rvec, tvec, tvec_depth, ids_markers, id_objects = arucoDetector.pose_estimation(color_image, result, k, d, size_marker, size_cube, num_cubes, tvec_depth_list, T_R_ROB)
+                        pose_image, rvec, tvec, tvec_depth, ids_markers, id_objects = arucoDetector.pose_estimation(color_image, result, k, d, size_marker, size_cube, num_cubes, tvec_depth_list, T_R_ROB, C_R_49)
 
                         rvec_RA_obj = []
                         for i in range(num_cubes):
