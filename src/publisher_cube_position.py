@@ -317,16 +317,9 @@ class ArUcoDetector:
 
                     C_R1, _ = cv2.Rodrigues(rvec)
 
-                    # Dirty fix
-                    deg = 30
-                    rad = deg * np.pi / 180
-                    C = np.array([[1, 0, 0], [0, np.cos(rad), np.sin(rad)], [0, -np.sin(rad), np.cos(rad)]])
-
-
-
                     # r = R.from_dcm(np.dot(inv(C_R_49), C_R1)) # Should work but doesn't
-                    r = R.from_dcm(np.dot(C, C_R1)) # Dirty fix
-                    # r = R.from_dcm(C_R1) # Works with offset
+                    # r = R.from_dcm(np.dot(C, C_R1)) # Dirty fix
+                    r = R.from_dcm(C_R1) # Works with offset
 
                     T = self.get_transf_matrix(tvec_sum[j,:], C_R1)
                     T_ROB_R = inv(T_R_ROB)
@@ -334,8 +327,9 @@ class ArUcoDetector:
  
                     tvec_sum[j,:] = T_robot[:3, 3]
                     # C_R1 = T_robot[:3, :3]
-                    # r = R.from_dcm(C_R1)  					 # r = R.from_matrix(C_R1) if using python3
-                                          					 # NOTE: python2 - from_dcm, as_dcm    |    python3 - from_matrix, as_matrix
+                    # r = R.from_dcm(C_R1)  		--->    			 # r = R.from_matrix(C_R1) if using python3
+                                          			             		 # NOTE: python2 --> from_dcm, as_dcm    |    python3 --> from_matrix, as_matrix
+
 
                     quaternion = r.as_quat()
                     quaternion_output[j,:] = quaternion
@@ -379,6 +373,7 @@ class ArUcoDetector:
                     robot_marker_detected = True
 
                     C_R_49, _ = cv2.Rodrigues(rvec)   #rotation matrix from 49 to Camera   
+                    inclination_angle = abs(90 - np.degrees(math.acos(C_R_49[2,2])))
                     t_R_49 = np.reshape(tvec, (3,1))
 
                     C_49_ROB = np.array([[-1, 0, 0], [0, 0, -1], [0, 1, 0]])
@@ -386,11 +381,13 @@ class ArUcoDetector:
                     T_R_ROB = np.concatenate((C_R_ROB, t_R_49), axis=1)
                     T_R_ROB = np.concatenate((T_R_ROB, np.reshape(np.array([0, 0, 0, 1]), (1,4))), axis=0)
 
-                    return T_R_ROB, robot_marker_detected, C_R_49
+                    return T_R_ROB, robot_marker_detected, C_R_49, inclination_angle
 
         T_R_ROB = np.zeros((4,4))
+        C_R_49 = np.zeros((3,3))
+        inclination_angle = 0
 
-        return T_R_ROB, robot_marker_detected
+        return T_R_ROB, robot_marker_detected, C_R_49, inclination_angle
 
 
 
@@ -519,7 +516,7 @@ if __name__ == '__main__':
             tvec_depth_robot_id, robot_marker_id = tracker.updateTrajectory_calibration(frame, result, robot_marker_id1, robot_marker_id2)
 
             if tvec_depth_robot_id != 0:
-                T_R_ROB, robot_marker_detected, C_R_49 = arucoDetector.environment_calibration(color_image, result, k, d, size_marker, size_cube, robot_marker_detected, robot_marker_id)
+                T_R_ROB, robot_marker_detected, C_R_49, inclination_angle = arucoDetector.environment_calibration(color_image, result, k, d, size_marker, size_cube, robot_marker_detected, robot_marker_id)
                 
                 if robot_marker_detected:
                     T_R_ROB[0, 3] = tvec_depth_robot_id[0]
@@ -620,23 +617,38 @@ if __name__ == '__main__':
 
                         rvec = np.concatenate((rvec_1, rvec_2, rvec_3, rvec_4), axis=0)
 
+
+
+                        angle = inclination_angle * np.pi / 180
+                        C_x = np.array([[1, 0, 0], [0, np.cos(angle), np.sin(angle)], [0, -np.sin(angle), np.cos(angle)]])
+
+                        for w in range(num_cubes):
+                            if not np.array_equal(rvec[w, :], np.array([0, 0, 0, 0])):
+                                r = R.from_quat(np.squeeze(rvec[w, :]))
+                                C_R_cube = r.as_dcm()
+                      
+                                r = R.from_dcm(np.dot(C_x, C_R_cube))
+                                rvec[w, :] = r.as_quat()
+
+
+
                         id_calibration = Int32()
                         id_calibration.data = robot_marker_id
                         id_marker_calibration.publish(id_calibration)
 
                         for z in range(num_cubes):
                             p = Pose()
-		            p.position.x = tvec_depth[z, 0]
-		            p.position.y = tvec_depth[z, 1]
-		            p.position.z = tvec_depth[z, 2]
+		                    p.position.x = tvec_depth[z, 0]
+		                    p.position.y = tvec_depth[z, 1]
+		                    p.position.z = tvec_depth[z, 2]
  
-		            p.orientation.x = rvec[z, 0]
+		                    p.orientation.x = rvec[z, 0]
        	                    p.orientation.y = rvec[z, 1]
                             p.orientation.z = rvec[z, 2]
                             p.orientation.w = rvec[z, 3]
 
-		            is_cube_detected = Bool()
-		            is_cube_detected.data = id_objects[z]
+		                    is_cube_detected = Bool()
+		                    is_cube_detected.data = id_objects[z]
 
                             if z == 0:
                                 cube1_pose.publish(p)
