@@ -396,14 +396,15 @@ class ArUcoDetector:
         image = input_image.copy()
         corners, ids, rejected = detect_res
 
-        # verify *at least* one ArUco marker was detected
+        # verify at least one ArUco marker was detected
         if len(corners) > 0:
-
-	        # flatten the ArUco IDs list
+        
+            # flatten the ArUco IDs list
             ids = ids.flatten()
 
 	        # loop over the detected ArUCo corners
             for (markerCorner, markerID) in zip(corners, ids):
+
 		        # extract the marker corners (which are always returned in
 		        # top-left, top-right, bottom-right, and bottom-left order)
                 corners = markerCorner.reshape((4, 2))
