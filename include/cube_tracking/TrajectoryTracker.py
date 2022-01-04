@@ -15,46 +15,6 @@ class TrajectoryTracker:
         self.trajectory = dict()
 
 
-    def updateTrajectory_old(self, aligned_frame, detectorResult):
-        corners, ids, rejected = detectorResult
-
-        timestamp = aligned_frame.get_timestamp()
-        depth_frame = aligned_frame.get_depth_frame()
-        depth_intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
-        # depth_image = np.asanyarray(depth_frame.get_data())
-
-        coords = []
-        feasible_markers = []
-
-        if len(corners) > 0:
-	        # flatten the ArUco IDs list
-            ids = ids.flatten()
-
-	        # loop over the detected ArUCo corners
-            for (markerCorner, markerID) in zip(corners, ids):
-
-		        # extract the marker corners (which are always returned in top-left, top-right, bottom-right, and bottom-left order)
-                corners = markerCorner.reshape((4, 2))
-                (topLeft, topRight, bottomRight, bottomLeft) = corners
-
-		        # convert each of the (x, y)-coordinate pairs to integers
-                topRight = (int(topRight[0]), int(topRight[1]))
-                bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
-                bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
-                topLeft = (int(topLeft[0]), int(topLeft[1]))
-
-                
-                coord = self._getCoordinate(depth_intrinsics, depth_frame, (topRight, bottomRight, bottomLeft, topLeft))    
-
-                
-                if coord is not None:
-                    self._add(timestamp, markerID, coord)
-
-                    coords.append(coord)
-                    feasible_markers.append(markerID)
-                
-            
-            return coords, feasible_markers
 
     def updateTrajectory(self, aligned_frame, detectorResult, num_cubes):
         corners, ids, rejected = detectorResult
@@ -62,101 +22,87 @@ class TrajectoryTracker:
         timestamp = aligned_frame.get_timestamp()
         depth_frame = aligned_frame.get_depth_frame()
         depth_intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
-        # depth_image = np.asanyarray(depth_frame.get_data())
 
         corners = np.array(corners)
         ids = ids.reshape(-1)
 
-        ''' Object 1 '''
-        # Number of faces of object 1
-        object_1_faces = np.sum(np.where(ids<=6,1,0))
-        # Corners of the faces of object 1
-        corners_object_1 = corners[np.argwhere(ids<=6)]
-        # Id of faces of object 1
-        object_1_id = ids[np.argwhere(ids<=6)]
+        #######  OBJECT 1  #######
+        object_1_faces = np.sum(np.where(ids<=6,1,0))                  # Number of faces detected of object 1
+        corners_object_1 = corners[np.argwhere(ids<=6)]                # Corners of each detected face of object 1
+        object_1_id = ids[np.argwhere(ids<=6)]                         # ID of each detected face in object 1
 
-        ''' Object 2 '''
-        cond_obj2 = ((ids>6) & (ids<=12))
-        # Number of faces of object 2
-        object_2_faces = np.sum(np.where(cond_obj2, 1, 0))
-        # Corners of the faces of object 2
-        corners_object_2 = corners[np.argwhere(cond_obj2)]
-        # Id of faces of object 2
-        object_2_id = ids[np.argwhere(cond_obj2)]
 
-        ''' Object 3 '''
-        cond_obj3 = ((ids>12) & (ids<=18))
-        # Number of faces of object 3
-        object_3_faces = np.sum(np.where(cond_obj3, 1, 0))
-        # Corners of the faces of object 3
-        corners_object_3 = corners[np.argwhere(cond_obj3)]
-        # Id of faces of object 3
-        object_3_id = ids[np.argwhere(cond_obj3)]
+        #######  OBJECT 2  #######
+        cond_obj2 = ((ids>6) & (ids<=12))                          
+        object_2_faces = np.sum(np.where(cond_obj2, 1, 0))             # Number of faces detected of object 2      
+        corners_object_2 = corners[np.argwhere(cond_obj2)]             # Corners of each detected face of object 2
+        object_2_id = ids[np.argwhere(cond_obj2)]                      # ID of each detected face in object 2
 
-        ''' Object 4 '''
+
+        #######  OBJECT 3  #######
+        cond_obj3 = ((ids>12) & (ids<=18))                        
+        object_3_faces = np.sum(np.where(cond_obj3, 1, 0))             # Number of faces detected of object 3
+        corners_object_3 = corners[np.argwhere(cond_obj3)]             # Corners of each detected face of object 3
+        object_3_id = ids[np.argwhere(cond_obj3)]                      # ID of each detected face in object 3
+
+
+        #######  OBJECT 4  #######
         cond_obj4 = ((ids>18) & (ids<=24))
-        # Number of faces of object 4
-        object_4_faces = np.sum(np.where(cond_obj4, 1, 0))
-        # Corners of the faces of object 4
-        corners_object_4 = corners[np.argwhere(cond_obj4)]
-        # Id of faces of object 4
-        object_4_id = ids[np.argwhere(cond_obj4)]
+        object_4_faces = np.sum(np.where(cond_obj4, 1, 0))             # Number of faces detected of object 4
+        corners_object_4 = corners[np.argwhere(cond_obj4)]             # Corners of each detected face of object 4
+        object_4_id = ids[np.argwhere(cond_obj4)]                      # ID of each detected face in object 4
 
 
-        # Number of faces of each object
-        detected_faces = np.array([object_1_faces, object_2_faces, object_3_faces, object_4_faces])
-        # Total number of objects detected
-        detected_objects = np.sum(np.where(detected_faces>0,1,0))
+        detected_faces = np.array([object_1_faces, object_2_faces, object_3_faces, object_4_faces])                # Number of faces for each object
+        detected_objects = np.sum(np.where(detected_faces>0,1,0))                                                  # Total number of objects detected
 
 
         new_corners = [corners_object_1, corners_object_2, corners_object_3, corners_object_4]
         new_ids = [object_1_id, object_2_id, object_3_id, object_4_id]
 
 
-        coords_list = []
+        positions_list = []
         feasible_ids = []
 
-        # If markers are detected
+        # We enter the loop if at least one object is detected
         if detected_objects > 0:
-            # Loop over each object
+
+            # We loop over the maximum number of cubes detectable 
             for j in range(num_cubes):
-                # Loop over each face of each object
-                coords = []
-               
+                positions = []
+
+                # For each object we loop over all its detected faces
                 for i in range(0, detected_faces[j]):
 
-		            # extract the marker corners (which are always returned in top-left, top-right, bottom-right, and bottom-left order)
+		            # For each detected marker we extract its corners (which are always returned in top-left, top-right, bottom-right, and bottom-left order)
                     corner = new_corners[j][i].reshape((4, 2))
 
                     (topLeft, topRight, bottomRight, bottomLeft) = corner
 
-		            # convert each of the (x, y)-coordinate pairs to integers
+		            # We convert each of the (x, y)-coordinate pairs to integers
                     topRight = (int(topRight[0]), int(topRight[1]))
                     bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
                     bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
                     topLeft = (int(topLeft[0]), int(topLeft[1]))
-
                 
-                    coord = self._getCoordinate(depth_intrinsics, depth_frame, (topRight, bottomRight, bottomLeft, topLeft))    
-
+                    position = self._getCoordinate(depth_intrinsics, depth_frame, (topRight, bottomRight, bottomLeft, topLeft))    
      
-                    coords.append(coord)
+                    positions.append(position)
                     feasible_ids.append(new_ids[j][i])
 
              
-                coords_list.append(coords)
+                positions_list.append(positions)
             
-            return coords_list, feasible_ids
+            return positions_list, feasible_ids
 
 
 
-    def updateTrajectory_calibration(self, aligned_frame, detectorResult, robot_marker_id1, robot_marker_id2):
+    def updateTrajectory_calibration(self, aligned_frame, detectorResult, calibration_marker_1, calibration_marker_2):
         corners, ids, rejected = detectorResult
 
         timestamp = aligned_frame.get_timestamp()
         depth_frame = aligned_frame.get_depth_frame()
         depth_intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
-        # depth_image = np.asanyarray(depth_frame.get_data())
 
 
         if len(corners) > 0:
@@ -177,12 +123,12 @@ class TrajectoryTracker:
                 topLeft = (int(topLeft[0]), int(topLeft[1]))
 
                 
-                coord = self._getCoordinate(depth_intrinsics, depth_frame, (topRight, bottomRight, bottomLeft, topLeft))    
+                position = self._getCoordinate(depth_intrinsics, depth_frame, (topRight, bottomRight, bottomLeft, topLeft))    
 
                 
-                if coord is not None and ((markerID == robot_marker_id1) or (markerID == robot_marker_id2)):
-                    self._add(timestamp, markerID, coord)
-                    return coord, markerID
+                if position is not None and ((markerID == calibration_marker_1) or (markerID == calibration_marker_2)):
+                    self._add(timestamp, markerID, position)
+                    return position, markerID
 
             return 0
                 
@@ -197,8 +143,8 @@ class TrajectoryTracker:
 
 
     def _getCoordinate(self, depth_intrinsics, depth_frame, markerPos):
+
         # for simplicity, just use the center point to extract the 3D coordinate
-        # TODO: In future update, we can use fillPoly to mask the marker, and compute the average 3D coordinate
         topRight, bottomRight, bottomLeft, topLeft = markerPos
         cX = int((topLeft[0] + bottomRight[0]) / 2.0)
         cY = int((topLeft[1] + bottomRight[1]) / 2.0)
