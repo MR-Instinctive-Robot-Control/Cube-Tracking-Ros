@@ -350,7 +350,7 @@ class ArUcoDetector:
 
 
 
-    def environment_calibration(self, frame, result, matrix_coefficients, distortion_coefficients, size_marker, size_cube, robot_marker_detected, calibration_marker):
+    def environment_calibration(self, frame, result, matrix_coefficients, distortion_coefficients, size_marker, size_cube, calibration_marker_detected, calibration_marker):
         corners = result[0]
         ids = result[1]
         rejected_img_points = result[2]
@@ -368,8 +368,8 @@ class ArUcoDetector:
 
                 id_marker = int(ids[i][0])
 
-                if ids[i][0] == calibration_marker and not robot_marker_detected:                  # calibration_marker can be either 48 or 49 (I will use 49 for the following variable names, but the same applies with marker 48)
-                    robot_marker_detected = True
+                if ids[i][0] == calibration_marker and not calibration_marker_detected:                  # calibration_marker can be either 48 or 49 (I will use 49 for the following variable names, but the same applies with marker 48)
+                    calibration_marker_detected = True
 
                     R_camera_49, _ = cv2.Rodrigues(rotation_vector)                             # rotation matrix from frame 49 (calibration marker) to Camera   
                     inclination_angle = abs(90 - np.degrees(math.acos(R_camera_49[2,2])))       # this angle will be used afterwards to compensate for a small rotational offset around the x-axis
@@ -380,13 +380,13 @@ class ArUcoDetector:
                     T_camera_robot = np.concatenate((R_camera_robot, t_camera_49), axis=1)
                     T_camera_robot = np.concatenate((T_camera_robot, np.reshape(np.array([0, 0, 0, 1]), (1,4))), axis=0)        # transformation matrix from robot to camera frame
 
-                    return T_camera_robot, robot_marker_detected, R_camera_49, inclination_angle
+                    return T_camera_robot, calibration_marker_detected, R_camera_49, inclination_angle
 
         T_camera_robot = np.zeros((4,4))
         R_camera_49 = np.zeros((3,3))
         inclination_angle = 0
 
-        return T_camera_robot, robot_marker_detected, R_camera_49, inclination_angle
+        return T_camera_robot, calibration_marker_detected, R_camera_49, inclination_angle
 
 
 
@@ -483,7 +483,7 @@ if __name__ == '__main__':
     quat_running_avg_3 = np.zeros((10,4))
     quat_running_avg_4 = np.zeros((10,4))
 
-    robot_marker_detected = False   
+    calibration_marker_detected = False   
     
     # Marker IDs chosen for the environment calibration
     calibration_marker_1 = 49
@@ -542,13 +542,13 @@ if __name__ == '__main__':
 
         cond_init = ((calibration_marker_1 in np.squeeze(result[1])) or (calibration_marker_2 in np.squeeze(result[1])))
 
-        if not robot_marker_detected and result[1] is not None and cond_init:
+        if not calibration_marker_detected and result[1] is not None and cond_init:
             position_calibration_marker, calibration_marker = tracker.updateTrajectory_calibration(frame, result, calibration_marker_1, calibration_marker_2)
 
             if position_calibration_marker != 0:
-                T_camera_robot, robot_marker_detected, R_camera_49, inclination_angle = arucoDetector.environment_calibration(color_image, result, k, d, size_marker, size_cube, robot_marker_detected, calibration_marker)
+                T_camera_robot, calibration_marker_detected, R_camera_49, inclination_angle = arucoDetector.environment_calibration(color_image, result, k, d, size_marker, size_cube, calibration_marker_detected, calibration_marker)
                 
-                if robot_marker_detected:
+                if calibration_marker_detected:
                     T_camera_robot[0, 3] = position_calibration_marker[0]
                     T_camera_robot[1, 3] = position_calibration_marker[1]
                     T_camera_robot[2, 3] = position_calibration_marker[2]
@@ -557,7 +557,7 @@ if __name__ == '__main__':
 
         # Once the calibration markers have been detected, we can start the pose estimation of the cubes
 
-        if robot_marker_detected:
+        if calibration_marker_detected:
 
             if result[1] is not None:
 
